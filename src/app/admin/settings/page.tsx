@@ -90,7 +90,7 @@ export default function SettingsPage() {
               <div className="small">{s.description}</div>
               <div className="muted small">型：{s.type}・単位：{s.unit}{s.min != null && `・最小 ${s.min}`}{s.max != null && `・最大 ${s.max}`}{s.options && `・選択肢 ${s.options.join(" / ")}`}</div>
             </div>
-            <div className="right"><div className="code">{show(s.value)}</div><button className="secondary small" onClick={() => { setEditing(s.key); setText(show(s.value)); setScope("global"); setErr(""); }}>変える</button></div>
+            <div className="right"><div className="code">{show(s.value)}</div><button className="secondary small nowrap" onClick={() => { setEditing(s.key); setText(show(s.value)); setScope("global"); setErr(""); }}>変える</button></div>
           </div>
           {s.overrides.map((o) => (
             <div key={o.id} className="small row"><span className="badge">{o.scopeType === "shop" ? "店" : "エリア"}：{o.scopeName}</span><span className="code">{show(o.value)}</span><button className="secondary small" onClick={() => removeOverride(s, o)}>上書きをやめる</button></div>

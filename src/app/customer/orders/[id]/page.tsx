@@ -109,7 +109,7 @@ export default function OrderPage() {
             <tr><th>合計</th><th className="right">{yen(o.estimatedTotalJpy)}</th><th className="right">{yen(o.finalTotalJpy)}</th></tr>
           </tbody>
         </table>
-        <p className="muted">仮押さえ：{yen(o.holdAmountJpy)}（確定するのは実際の合計だけ）</p>
+        <p className="muted">{holdNote(o.status, o.holdAmountJpy, o.finalTotalJpy)}</p>
         {o.receiptUrl && <p><a href={o.receiptUrl} target="_blank" rel="noreferrer">レシート画像を見る</a></p>}
       </div>
 
@@ -136,16 +136,32 @@ export default function OrderPage() {
         <div className="card stack">
           <strong>トラブルを運営に知らせる</strong>
           <textarea value={disputeText} onChange={(e) => setDisputeText(e.target.value)} placeholder="例：商品が違う、届かない" maxLength={500} aria-label="トラブルの内容" />
-          <button className="danger" disabled={!disputeText} onClick={() => act("dispute", { reason: disputeText })}>知らせる</button>
+          <button className="danger" disabled={!disputeText} onClick={() => confirm("運営に知らせますか？運営が確認するまで、この注文は止まります。") && act("dispute", { reason: disputeText })}>知らせる</button>
         </div>
       )}
 
       <div className="card small">
         <h2>進行の記録</h2>
-        {o.transitions.map((t, i) => <div key={i} className="muted">{dt(t.at)}　{STATUS_LABEL[t.from]} → {STATUS_LABEL[t.to]}</div>)}
+        {o.transitions.map((t, i) => <div key={i} className="muted">{dt(t.at)}　{transitionText(t.from, t.to)}</div>)}
       </div>
     </>
   );
+}
+
+// 状態が変わらない記録（注文の作成・金額の承認）は「A → A」ではなく、何が起きたかを書く
+const SAME_STATE_TEXT: Record<string, string> = { draft: "注文を作成", purchased: "金額・代替品を承認" };
+
+function transitionText(from: string, to: string) {
+  if (from === to) return SAME_STATE_TEXT[to] ?? STATUS_LABEL[to];
+  return `${STATUS_LABEL[from]} → ${STATUS_LABEL[to]}`;
+}
+
+function holdNote(status: string, hold: number, final: number | null) {
+  if (status === "completed" && final != null) {
+    return `支払い確定：${yen(final)}（仮押さえ ${yen(hold)} のうち、残りの ${yen(hold - final)} は解放しました）`;
+  }
+  if (status === "cancelled" || status === "expired") return `仮押さえ ${yen(hold)} は解放しました（お支払いはありません）`;
+  return `仮押さえ：${yen(hold)}（確定するのは実際の合計だけ）`;
 }
 
 function PaymentRetry({ orderId }: { orderId: string }) {

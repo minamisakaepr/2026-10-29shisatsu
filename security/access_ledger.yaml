@@ -536,7 +536,7 @@ entrances:
     path: /api/shop/stats
     resource: order
     grants:
-      - { role: shop, ops: [read], scope: shop, fields: ["shops[].id", "shops[].name", "shops[].days[].date", "shops[].days[].orders", "shops[].days[].itemsJpy", "shops[].products[].name", "shops[].products[].qty"], reason: 自店の注文集計を見るため（個人を特定できる情報は含めない） }
+      - { role: shop, ops: [read], scope: shop, fields: [month, "shops[].id", "shops[].name", "shops[].days[].date", "shops[].days[].orders", "shops[].days[].itemsJpy", "shops[].products[].name", "shops[].products[].qty"], reason: 自店の注文集計を見るため（個人を特定できる情報は含めない） }
   - id: export.shop.stats_csv
     kind: export
     method: GET

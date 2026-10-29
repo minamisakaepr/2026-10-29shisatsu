@@ -42,6 +42,8 @@ header.top .spacer { flex: 1; }
 .small { font-size: .85rem; }
 .right { text-align: right; }
 .stack > * + * { margin-top: 8px; }
+.stack > a { display: block; }
+.row.pair { gap: 4px; margin: 0; flex-wrap: nowrap; color: var(--text); font-size: 1rem; }
 
 button, .btn {
   appearance: none; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
@@ -68,6 +70,9 @@ input[type="checkbox"] { width: auto; }
 table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 th, td { border-bottom: 1px solid var(--line); padding: 6px 4px; text-align: left; vertical-align: top; }
 .scroll-x { overflow-x: auto; }
+/* 管理画面の表は、狭い画面では1文字ずつ折り返さず、横にスクロールさせる */
+.scroll-x table { min-width: 640px; }
+.nowrap { white-space: nowrap; }
 .code { font-family: ui-monospace, monospace; font-size: .85rem; word-break: break-all; }
 .big-code { font-size: 2rem; letter-spacing: .3em; font-weight: 700; text-align: center; }
 .qty { width: 70px; }

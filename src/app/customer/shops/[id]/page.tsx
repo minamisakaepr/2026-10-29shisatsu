@@ -56,7 +56,7 @@ export default function ShopPage() {
             <div>{p.name}<div className="muted small">{yen(p.priceJpy)}</div></div>
             <input
               className="qty" type="number" min={0} max={shop.maxItemsPerOrder} aria-label={`${p.name}の個数`}
-              value={qty[p.id] ?? 0} onChange={(e) => setQty({ ...qty, [p.id]: Math.max(0, Number(e.target.value) || 0) })}
+              value={qty[p.id] ?? 0} onFocus={(e) => e.target.select()} onChange={(e) => setQty({ ...qty, [p.id]: Math.max(0, Number(e.target.value) || 0) })}
             />
           </div>
         ))}

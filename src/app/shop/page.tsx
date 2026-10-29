@@ -57,7 +57,7 @@ export default function ShopPage() {
                 <td>{p.name}</td>
                 <td>
                   <input className="qty" type="number" defaultValue={p.priceJpy} aria-label={`${p.name}の価格`}
-                    onBlur={(e) => Number(e.target.value) !== p.priceJpy && save(`/api/shop/products/${p.id}`, { priceJpy: Number(e.target.value) })} />
+                    onFocus={(e) => e.target.select()} onBlur={(e) => Number(e.target.value) !== p.priceJpy && save(`/api/shop/products/${p.id}`, { priceJpy: Number(e.target.value) })} />
                 </td>
                 <td><input type="checkbox" checked={p.active} onChange={(e) => save(`/api/shop/products/${p.id}`, { active: e.target.checked })} aria-label={`${p.name}を販売する`} /></td>
               </tr>

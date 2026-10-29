@@ -3,6 +3,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, dt } from "@/lib/api";
 
+const JOB_LABEL: Record<string, string> = {
+  expire_orders: "期限切れの注文を締める",
+  auto_complete: "自動で受け取り完了",
+  retry_captures: "止まった本決済をやり直す",
+  payouts: "パシリへ送金",
+  reconcile: "Stripe と照合",
+};
+
 interface Note { id: string; kind: string; message: string; createdAt: string }
 
 export default function AdminHome() {
@@ -15,7 +23,7 @@ export default function AdminHome() {
     setMsg("");
     try {
       const r = await api(`/api/admin/jobs/${name}/run`, { body: {} });
-      setMsg(`${name}: ${JSON.stringify(r.result)}`);
+      setMsg(`${JOB_LABEL[name]}: ${JSON.stringify(r.result)}`);
     } catch (e) {
       setMsg((e as Error).message);
     }
@@ -32,8 +40,8 @@ export default function AdminHome() {
       </div>
       <h2>定期処理をすぐ動かす</h2>
       <div className="card row">
-        {["expire_orders", "auto_complete", "retry_captures", "payouts", "reconcile"].map((n) => (
-          <button key={n} className="secondary small" onClick={() => run(n)}>{n}</button>
+        {Object.entries(JOB_LABEL).map(([n, label]) => (
+          <button key={n} className="secondary small" onClick={() => run(n)}>{label}</button>
         ))}
         {msg && <div className="msg info code" style={{ width: "100%" }}>{msg}</div>}
       </div>

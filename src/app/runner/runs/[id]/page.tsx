@@ -61,6 +61,13 @@ export default function RunPage() {
       </div>
       {err && <div className="msg error">{err}</div>}
 
+      {run.status === "withdrawn" && (
+        <div className="card stack">
+          <div className="msg info">このおつかいは取り消しました。注文は、ほかのパシリが引き受けられる状態に戻っています。</div>
+          <a className="btn secondary" href="/runner">近くのおつかいを探す</a>
+        </div>
+      )}
+
       {run.status === "shopping" && shopping.length > 0 && (
         <form
           className="card stack"
@@ -97,9 +104,10 @@ export default function RunPage() {
                   <div key={i.id} className="stack" style={{ borderTop: "1px solid var(--line)", paddingTop: 6 }}>
                     <div>{i.name} ×{i.qty}（見積 {yen(i.unitPriceJpy)}/個）</div>
                     <div className="row">
-                      <label className="row"><input type="checkbox" checked={a.outOfStock} onChange={(e) => set({ outOfStock: e.target.checked })} />売り切れ</label>
-                      <span>単価</span><input className="qty" type="number" min={0} value={a.actualUnitPriceJpy} onChange={(e) => set({ actualUnitPriceJpy: Number(e.target.value) || 0 })} aria-label={`${i.name}の実際の単価`} />
-                      <span>個数</span><input className="qty" type="number" min={0} value={a.actualQty} onChange={(e) => set({ actualQty: Number(e.target.value) || 0 })} aria-label={`${i.name}の実際の個数`} />
+                      <label className="row pair"><input type="checkbox" checked={a.outOfStock} onChange={(e) => set({ outOfStock: e.target.checked })} />売り切れ</label>
+                      {/* 「単価」と入力欄、「個数」と入力欄は、狭い画面でも離れないように1組にする */}
+                      <span className="row pair">単価<input className="qty" type="number" min={0} value={a.actualUnitPriceJpy} onFocus={(e) => e.target.select()} onChange={(e) => set({ actualUnitPriceJpy: Number(e.target.value) || 0 })} aria-label={`${i.name}の実際の単価`} /></span>
+                      <span className="row pair">個数<input className="qty" type="number" min={0} value={a.actualQty} onFocus={(e) => e.target.select()} onChange={(e) => set({ actualQty: Number(e.target.value) || 0 })} aria-label={`${i.name}の実際の個数`} /></span>
                     </div>
                     <input placeholder="代わりの商品（あれば）" value={a.substitutionName} onChange={(e) => set({ substitutionName: e.target.value })} maxLength={60} />
                   </div>
@@ -111,16 +119,19 @@ export default function RunPage() {
           <input id="receipt" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           <button>レシートを登録して配達へ</button>
           {run.canWithdraw && (
-            <button type="button" className="secondary" onClick={() => confirm("引き受けを取り消しますか？") && call(`/api/runner/runs/${run.id}/withdraw`)}>
-              引き受けを取り消す（{dt(run.withdrawDeadlineAt)} まで）
-            </button>
+            <div className="row">
+              <button type="button" className="secondary" onClick={() => confirm("引き受けを取り消しますか？") && call(`/api/runner/runs/${run.id}/withdraw`)}>
+                引き受けを取り消す
+              </button>
+              <span className="muted small">{dt(run.withdrawDeadlineAt)} まで</span>
+            </div>
           )}
         </form>
       )}
 
       {run.receiptUrl && <p className="small"><a href={run.receiptUrl} target="_blank" rel="noreferrer">登録したレシートを見る</a></p>}
 
-      <h2>配達</h2>
+      {run.status !== "withdrawn" && <h2>配達</h2>}
       {run.orders.filter((o) => o.status !== "matched").map((o) => (
         <div key={o.id} className="card stack">
           <div className="between"><strong>{o.customer.displayName} さん</strong><span className="badge">{STATUS_LABEL[o.status]}</span></div>
@@ -138,7 +149,7 @@ export default function RunPage() {
             <div className="stack">
               <QrScanner onCode={(c) => setCodes((x) => ({ ...x, [o.id]: c }))} />
               <div className="row">
-                <input inputMode="numeric" maxLength={6} placeholder="受け取りコード（6桁）" value={codes[o.id] ?? ""} onChange={(e) => setCodes({ ...codes, [o.id]: e.target.value })} aria-label="受け取りコード" style={{ flex: 1 }} />
+                <input inputMode="numeric" maxLength={6} placeholder="6桁のコード" value={codes[o.id] ?? ""} onChange={(e) => setCodes({ ...codes, [o.id]: e.target.value })} aria-label="受け取りコード" style={{ flex: 1 }} />
                 <button onClick={() => call(`/api/runner/orders/${o.id}/receive`, { code: codes[o.id] ?? "" })}>受け取り完了</button>
               </div>
             </div>
