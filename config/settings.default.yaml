@@ -1,0 +1,283 @@
+# 設定値の初期値
+#
+# ・初回起動時（seed）にデータベースへ入ります。すでにデータベースにあるキーは上書きしません。
+# ・運用中の値の変更は、管理画面（/admin/settings）から行ってください。このファイルを書き換えても
+#   すでに投入済みの値は変わりません（新しいキーを足したときだけ反映されます）。
+# ・type: int（整数） / decimal（小数） / bool（はい・いいえ） / string（文字） / enum（選択肢）
+#         / timerange（"HH:MM-HH:MM"） / json
+# ・min / max は管理画面での入力チェックに使われます。
+
+hold_buffer_rate:
+  value: 0.20
+  type: decimal
+  unit: 率
+  description: 仮押さえ上乗せ率。見積額に対してどれだけ多めに与信するか（0.20 = 20%増し）
+  min: 0
+  max: 1
+
+price_diff_tolerance_rate:
+  value: 0.10
+  type: decimal
+  unit: 率
+  description: お客さんの承認なしで進めてよい、商品の見積と実額の差の割合
+  min: 0
+  max: 1
+
+runner_advance_limit_jpy:
+  value: 5000
+  type: int
+  unit: 円
+  description: パシリ1回のおつかいで立て替える商品見積の合計の上限
+  min: 500
+  max: 100000
+
+max_orders_per_run:
+  value: 5
+  type: int
+  unit: 件
+  description: 1回のおつかいでまとめられる注文の数
+  min: 1
+  max: 20
+
+reward_base_jpy:
+  value: 150
+  type: int
+  unit: 円
+  description: 1回のおつかいの基本報酬（まとめた注文で割り勘）
+  min: 0
+  max: 5000
+
+reward_per_order_jpy:
+  value: 100
+  type: int
+  unit: 円
+  description: まとめた注文1件ごとの報酬
+  min: 0
+  max: 5000
+
+surcharge_rain_jpy:
+  value: 100
+  type: int
+  unit: 円
+  description: 雨の日割増（1回のおつかいあたり。まとめた注文で割り勘）
+  min: 0
+  max: 5000
+
+surcharge_early_jpy:
+  value: 100
+  type: int
+  unit: 円
+  description: 早朝割増（1回のおつかいあたり。まとめた注文で割り勘）
+  min: 0
+  max: 5000
+
+early_hours:
+  value: "06:00-08:00"
+  type: timerange
+  unit: 時刻
+  description: 早朝割増がつく時間帯（パシリが引き受けた時刻で判定）
+
+surcharge_per_km_jpy:
+  value: 50
+  type: int
+  unit: 円/km
+  description: 距離割増（店から一番遠い受け渡し場所まで、1kmごと。まとめた注文で割り勘）
+  min: 0
+  max: 1000
+
+platform_fee_rate:
+  value: 0.10
+  type: decimal
+  unit: 率
+  description: 運営手数料率（商品実額に対して）
+  min: 0
+  max: 0.5
+
+auto_complete_minutes:
+  value: 120
+  type: int
+  unit: 分
+  description: 配達後、お客さんが操作しなかったときに自動で受け取り完了（本決済）にするまでの時間
+  min: 5
+  max: 10080
+
+payout_timing:
+  value: same_day
+  type: enum
+  options: [same_day, next_day, weekly]
+  unit: 選択
+  description: パシリへの入金タイミング（same_day=本決済後すぐ / next_day=翌日 / weekly=翌週月曜）
+
+payout_hour:
+  value: "09:00"
+  type: string
+  unit: 時刻
+  description: next_day / weekly のときに送金する時刻（HH:MM）
+  pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+
+cancel_deadline_minutes:
+  value: 10
+  type: int
+  unit: 分
+  description: パシリが引き受けてから、お客さん・パシリがキャンセルできる時間
+  min: 0
+  max: 120
+
+order_expire_minutes:
+  value: 60
+  type: int
+  unit: 分
+  description: 誰も引き受けない注文が期限切れになるまでの時間（仮押さえを解放）
+  min: 5
+  max: 1440
+
+service_radius_km:
+  value: 2.0
+  type: decimal
+  unit: km
+  description: 対応エリアの半径（店から受け渡し場所まで / パシリから店まで）
+  min: 0.1
+  max: 50
+
+title_rules:
+  value:
+    エースパシリ: { monthly_runs: 20 }
+    はじめてのパシリ: { total_runs: 1 }
+    信頼のパシリ: { total_runs: 10, min_avg_rating: 4.5 }
+  type: json
+  unit: JSON
+  description: 称号の条件。monthly_runs（今月の回数）/ total_runs（累計回数）/ min_avg_rating（平均評価）を組み合わせる
+
+rain_active:
+  value: false
+  type: bool
+  unit: はい/いいえ
+  description: 今日は雨の日割増をつけるか（運営が切り替える）
+
+timezone:
+  value: Asia/Tokyo
+  type: string
+  unit: タイムゾーン
+  description: 早朝判定・月ごとの集計・入金時刻に使うタイムゾーン
+
+max_items_per_order:
+  value: 20
+  type: int
+  unit: 点
+  description: 1つの注文に入れられる商品の数（個数の合計）
+  min: 1
+  max: 100
+
+# ---- セキュリティ ----
+
+login_max_attempts:
+  value: 5
+  type: int
+  unit: 回
+  description: ログインに続けて失敗できる回数（超えると一定時間ロック）
+  min: 3
+  max: 20
+
+login_max_attempts_per_ip:
+  value: 30
+  type: int
+  unit: 回
+  description: 同じ IP アドレスからロック時間内にログイン失敗できる回数
+  min: 5
+  max: 1000
+
+login_lock_minutes:
+  value: 15
+  type: int
+  unit: 分
+  description: ログイン失敗が続いたときのロック時間
+  min: 1
+  max: 1440
+
+session_ttl_hours:
+  value: 72
+  type: int
+  unit: 時間
+  description: ログイン状態が続く時間
+  min: 1
+  max: 720
+
+password_min_length:
+  value: 10
+  type: int
+  unit: 文字
+  description: パスワードの最低文字数
+  min: 8
+  max: 128
+
+bcrypt_cost:
+  value: 12
+  type: int
+  unit: 強さ
+  description: パスワードのハッシュ化の強さ（大きいほど安全だが遅い）
+  min: 10
+  max: 15
+
+email_verify_ttl_minutes:
+  value: 60
+  type: int
+  unit: 分
+  description: メール確認リンクの有効期限
+  min: 5
+  max: 1440
+
+reason_min_length:
+  value: 4
+  type: int
+  unit: 文字
+  description: 理由の入力が必須な操作（個人情報の閲覧・設定変更など）で求める最低文字数
+  min: 1
+  max: 200
+
+receive_code_max_attempts:
+  value: 5
+  type: int
+  unit: 回
+  description: 受け取りコードを間違えて入力できる回数（超えると運営対応）
+  min: 3
+  max: 20
+
+receipt_max_bytes:
+  value: 5000000
+  type: int
+  unit: バイト
+  description: レシート画像の最大サイズ
+  min: 100000
+  max: 20000000
+
+receipt_url_ttl_seconds:
+  value: 300
+  type: int
+  unit: 秒
+  description: レシート画像の期限付き URL の有効時間
+  min: 30
+  max: 3600
+
+anomaly_window_minutes:
+  value: 5
+  type: int
+  unit: 分
+  description: 異常検知で「短時間」とみなす長さ
+  min: 1
+  max: 1440
+
+anomaly_deny_threshold:
+  value: 20
+  type: int
+  unit: 回
+  description: 上の時間内にこれ以上拒否されたら異常として表示
+  min: 3
+  max: 10000
+
+job_interval_seconds:
+  value: 30
+  type: int
+  unit: 秒
+  description: 定期処理ワーカーが動く間隔
+  min: 5
+  max: 3600

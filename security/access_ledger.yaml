@@ -1,0 +1,748 @@
+# アクセス台帳（出入り口の管理）
+#
+# ここに書かれていない出入り口・ロールは、すべて拒否されます（デフォルト拒否）。
+# コード上の API・画面・定期処理と、この台帳がずれていると、アプリは起動しません。
+#
+# 1つの出入り口（entrance）に、許可するロールごとの行（grants）を書きます。
+#   role   : anonymous（未ログイン）/ customer / runner / shop / admin / system
+#   ops    : read（読む）/ create（作る）/ update（変える）/ delete（消す）
+#   scope  : public（誰でも）/ self（自分のユーザー情報）/ own（自分が注文者）
+#            / assigned（自分が担当パシリ）/ shop（自分の店）/ nearby（自分の注文を除く引き受け待ち）
+#            / catalog（公開中の店・商品）/ all（全件。admin と system のみ）
+#   fields : 外に返してよい項目。"items[].name" は配列の中の項目。
+#            { path: ..., when: { status: [...] } } は、その項目を含む一番内側の配列要素
+#            （なければ1件分のデータ）の status が一致するときだけ返す。
+#            "*" は全項目（order / run / user には使えません）。
+#            ファイル・CSV の書き出しでは、書き出す列の一覧を書く（中身はそのまま返る）。
+#   reason : なぜ許可するのか（必須）
+#
+# 出入り口の共通オプション
+#   kind           : api / page / webhook / job / file / export
+#   resource       : データ範囲チェックの対象（:id で指定されたものを門番が読み込んで範囲を確かめる）
+#   require_reason : true なら理由（reason）の入力が必須。理由は通行記録に残る
+#   signature      : stripe なら Stripe の署名検証が必須（CSRF チェックの代わり）
+
+version: 1
+
+entrances:
+  # ============================================================
+  # 画面（page）
+  # ============================================================
+  - id: page.home
+    kind: page
+    path: /
+    grants:
+      - { role: anonymous, ops: [read], scope: public, reason: サービスの入口 }
+      - { role: customer, ops: [read], scope: public, reason: サービスの入口 }
+      - { role: runner, ops: [read], scope: public, reason: サービスの入口 }
+      - { role: shop, ops: [read], scope: public, reason: サービスの入口 }
+      - { role: admin, ops: [read], scope: public, reason: サービスの入口 }
+  - id: page.login
+    kind: page
+    path: /login
+    grants:
+      - { role: anonymous, ops: [read], scope: public, reason: ログインするため }
+      - { role: customer, ops: [read], scope: public, reason: 別のアカウントでログインし直すため }
+      - { role: runner, ops: [read], scope: public, reason: 別のアカウントでログインし直すため }
+      - { role: shop, ops: [read], scope: public, reason: 別のアカウントでログインし直すため }
+      - { role: admin, ops: [read], scope: public, reason: 別のアカウントでログインし直すため }
+  - id: page.signup
+    kind: page
+    path: /signup
+    grants:
+      - { role: anonymous, ops: [read], scope: public, reason: 新しくお客さん・パシリとして登録するため }
+  - id: page.verify
+    kind: page
+    path: /verify
+    grants:
+      - { role: anonymous, ops: [read], scope: public, reason: メールアドレスを確認するため }
+  - id: page.forbidden
+    kind: page
+    path: /forbidden
+    grants:
+      - { role: anonymous, ops: [read], scope: public, reason: 拒否されたことを伝えるため }
+      - { role: customer, ops: [read], scope: public, reason: 拒否されたことを伝えるため }
+      - { role: runner, ops: [read], scope: public, reason: 拒否されたことを伝えるため }
+      - { role: shop, ops: [read], scope: public, reason: 拒否されたことを伝えるため }
+      - { role: admin, ops: [read], scope: public, reason: 拒否されたことを伝えるため }
+
+  - id: page.customer.home
+    kind: page
+    path: /customer
+    grants:
+      - { role: customer, ops: [read], scope: catalog, reason: 店を選ぶため }
+  - id: page.customer.shop
+    kind: page
+    path: /customer/shops/:id
+    grants:
+      - { role: customer, ops: [read], scope: catalog, reason: 商品を選んで注文するため }
+  - id: page.customer.orders
+    kind: page
+    path: /customer/orders
+    grants:
+      - { role: customer, ops: [read], scope: own, reason: 自分の注文の一覧を見るため }
+  - id: page.customer.order
+    kind: page
+    path: /customer/orders/:id
+    grants:
+      - { role: customer, ops: [read], scope: own, reason: 進行状況・受け取り確認・評価のため }
+
+  - id: page.runner.home
+    kind: page
+    path: /runner
+    grants:
+      - { role: runner, ops: [read], scope: nearby, reason: 近くの注文を探して引き受けるため }
+  - id: page.runner.run
+    kind: page
+    path: /runner/runs/:id
+    grants:
+      - { role: runner, ops: [read], scope: assigned, reason: 買い物リスト・レシート登録・配達のため }
+  - id: page.runner.earnings
+    kind: page
+    path: /runner/earnings
+    grants:
+      - { role: runner, ops: [read], scope: self, reason: 報酬・入金履歴・称号を見るため }
+  - id: page.runner.onboarding
+    kind: page
+    path: /runner/onboarding
+    grants:
+      - { role: runner, ops: [read], scope: self, reason: 報酬の受け取り口座を登録するため }
+
+  - id: page.shop.home
+    kind: page
+    path: /shop
+    grants:
+      - { role: shop, ops: [read], scope: shop, reason: 商品・特典の管理と注文集計のため }
+
+  - id: page.admin.home
+    kind: page
+    path: /admin
+    grants:
+      - { role: admin, ops: [read], scope: all, reason: 運営メニュー }
+  - id: page.admin.settings
+    kind: page
+    path: /admin/settings
+    grants:
+      - { role: admin, ops: [read], scope: all, reason: 設定値の管理 }
+  - id: page.admin.ledger
+    kind: page
+    path: /admin/ledger
+    grants:
+      - { role: admin, ops: [read], scope: all, reason: アクセス台帳の確認 }
+  - id: page.admin.audit
+    kind: page
+    path: /admin/audit
+    grants:
+      - { role: admin, ops: [read], scope: all, reason: 通行記録の検索・異常検知 }
+  - id: page.admin.money
+    kind: page
+    path: /admin/money
+    grants:
+      - { role: admin, ops: [read], scope: all, reason: お金の台帳と照合結果の確認 }
+  - id: page.admin.orders
+    kind: page
+    path: /admin/orders
+    grants:
+      - { role: admin, ops: [read], scope: all, reason: 注文の確認・トラブル対応 }
+
+  # ============================================================
+  # 認証（api）
+  # ============================================================
+  - id: api.auth.login
+    kind: api
+    method: POST
+    path: /api/auth/login
+    grants:
+      - { role: anonymous, ops: [create], scope: public, fields: [ok, roles], reason: ログインするため }
+      - { role: customer, ops: [create], scope: public, fields: [ok, roles], reason: ログインし直すため }
+      - { role: runner, ops: [create], scope: public, fields: [ok, roles], reason: ログインし直すため }
+      - { role: shop, ops: [create], scope: public, fields: [ok, roles], reason: ログインし直すため }
+      - { role: admin, ops: [create], scope: public, fields: [ok, roles], reason: ログインし直すため }
+  - id: api.auth.logout
+    kind: api
+    method: POST
+    path: /api/auth/logout
+    grants:
+      - { role: customer, ops: [update], scope: self, fields: [ok], reason: ログアウトするため（自分のログイン状態を終える） }
+      - { role: runner, ops: [update], scope: self, fields: [ok], reason: ログアウトするため（自分のログイン状態を終える） }
+      - { role: shop, ops: [update], scope: self, fields: [ok], reason: ログアウトするため（自分のログイン状態を終える） }
+      - { role: admin, ops: [update], scope: self, fields: [ok], reason: ログアウトするため（自分のログイン状態を終える） }
+  - id: api.auth.signup
+    kind: api
+    method: POST
+    path: /api/auth/signup
+    grants:
+      - { role: anonymous, ops: [create], scope: public, fields: [ok], reason: お客さん・パシリとして登録するため }
+  - id: api.auth.verify
+    kind: api
+    method: POST
+    path: /api/auth/verify
+    grants:
+      - { role: anonymous, ops: [update], scope: public, fields: [ok], reason: メールアドレスを確認するため }
+  - id: api.me.show
+    kind: api
+    method: GET
+    path: /api/me
+    resource: user
+    grants:
+      - { role: anonymous, ops: [read], scope: public, fields: [loggedIn], reason: ログインしているか画面で判断するため }
+      - { role: customer, ops: [read], scope: self, fields: [loggedIn, id, displayName, roles, payoutsEnabled], reason: 自分の情報を画面に出すため }
+      - { role: runner, ops: [read], scope: self, fields: [loggedIn, id, displayName, roles, payoutsEnabled], reason: 自分の情報を画面に出すため }
+      - { role: shop, ops: [read], scope: self, fields: [loggedIn, id, displayName, roles, payoutsEnabled], reason: 自分の情報を画面に出すため }
+      - { role: admin, ops: [read], scope: self, fields: [loggedIn, id, displayName, roles, payoutsEnabled], reason: 自分の情報を画面に出すため }
+
+  # ============================================================
+  # Webhook
+  # ============================================================
+  - id: webhook.stripe
+    kind: webhook
+    method: POST
+    path: /api/webhooks/stripe
+    signature: stripe
+    grants:
+      - { role: anonymous, ops: [create], scope: public, fields: [received], reason: Stripe から決済の結果を受け取るため（署名検証必須） }
+
+  # ============================================================
+  # お客さん（customer）
+  # ============================================================
+  - id: api.customer.shops.list
+    kind: api
+    method: GET
+    path: /api/customer/shops
+    resource: shop
+    grants:
+      - role: customer
+        ops: [read]
+        scope: catalog
+        fields: [id, name, address, areaName, distanceKm, inArea]
+        reason: 注文できる店を選ぶため
+  - id: api.customer.shops.show
+    kind: api
+    method: GET
+    path: /api/customer/shops/:id
+    resource: shop
+    grants:
+      - role: customer
+        ops: [read]
+        scope: catalog
+        fields: [id, name, address, "products[].id", "products[].name", "products[].priceJpy", estimate.deliveryFeeJpy, estimate.platformFeeRate, estimate.holdBufferRate, estimate.distanceKm, estimate.inArea, maxItemsPerOrder]
+        reason: 商品と目安の料金を見て注文するため
+
+  - id: api.customer.orders.create
+    kind: api
+    method: POST
+    path: /api/customer/orders
+    resource: order
+    grants:
+      - role: customer
+        ops: [create]
+        scope: own
+        fields: [id, status, estimatedTotalJpy, holdAmountJpy, payment.mode, payment.clientSecret, payment.publishableKey]
+        reason: 注文を作り、仮押さえのための支払い画面を出すため
+  - id: api.customer.orders.confirm
+    kind: api
+    method: POST
+    path: /api/customer/orders/:id/confirm-payment
+    resource: order
+    grants:
+      - { role: customer, ops: [update], scope: own, fields: [id, status], reason: 仮押さえ（与信）の結果を確かめて注文を確定するため }
+  - id: api.customer.orders.list
+    kind: api
+    method: GET
+    path: /api/customer/orders
+    resource: order
+    grants:
+      - role: customer
+        ops: [read]
+        scope: own
+        fields: [id, status, shopName, itemCount, estimatedTotalJpy, finalTotalJpy, approvalStatus, createdAt]
+        reason: 自分の注文の一覧を見るため
+  - id: api.customer.orders.show
+    kind: api
+    method: GET
+    path: /api/customer/orders/:id
+    resource: order
+    grants:
+      - role: customer
+        ops: [read]
+        scope: own
+        fields:
+          - id
+          - status
+          - shop.id
+          - shop.name
+          - items[].id
+          - items[].name
+          - items[].qty
+          - items[].unitPriceJpy
+          - items[].actualUnitPriceJpy
+          - items[].actualQty
+          - items[].outOfStock
+          - items[].substitutionName
+          - dropoffLabel
+          - note
+          - estimatedItemsJpy
+          - estimatedDeliveryFeeJpy
+          - estimatedPlatformFeeJpy
+          - estimatedTotalJpy
+          - holdAmountJpy
+          - actualItemsJpy
+          - deliveryFeeJpy
+          - platformFeeJpy
+          - finalTotalJpy
+          - approvalStatus
+          - approvalReasons
+          - { path: receiveCode, when: { status: [purchased, delivered] } }
+          - runner.displayName
+          - runner.avgRating
+          - runner.ratingCount
+          - receiptUrl
+          - transitions[].from
+          - transitions[].to
+          - transitions[].at
+          - rating.stars
+          - rating.message
+          - createdAt
+          - matchedAt
+          - cancelDeadlineAt
+          - autoCompleteAt
+          - canCancel
+          - paymentMode
+        reason: 進行状況・金額・受け取りコードを見るため（パシリの個人情報は表示名と評価のみ）
+  - id: api.customer.orders.cancel
+    kind: api
+    method: POST
+    path: /api/customer/orders/:id/cancel
+    resource: order
+    grants:
+      - { role: customer, ops: [update], scope: own, fields: [id, status], reason: 期限内に注文をキャンセルするため }
+  - id: api.customer.orders.approve
+    kind: api
+    method: POST
+    path: /api/customer/orders/:id/approve
+    resource: order
+    grants:
+      - { role: customer, ops: [update], scope: own, fields: [id, status, approvalStatus, payment.mode, payment.clientSecret, payment.publishableKey], reason: 金額の変更・代替品を承認または拒否するため }
+  - id: api.customer.orders.receive
+    kind: api
+    method: POST
+    path: /api/customer/orders/:id/receive
+    resource: order
+    grants:
+      - { role: customer, ops: [update], scope: own, fields: [id, status, finalTotalJpy], reason: 受け取りを確認して本決済するため }
+  - id: api.customer.orders.dispute
+    kind: api
+    method: POST
+    path: /api/customer/orders/:id/dispute
+    resource: order
+    grants:
+      - { role: customer, ops: [update], scope: own, fields: [id, status], reason: トラブルを運営に知らせるため }
+  - id: api.customer.orders.rate
+    kind: api
+    method: POST
+    path: /api/customer/orders/:id/rating
+    resource: order
+    grants:
+      - { role: customer, ops: [create], scope: own, fields: [ok], reason: パシリを評価し、ありがとうを伝えるため }
+
+  # ============================================================
+  # パシリ（runner）
+  # ============================================================
+  - id: api.runner.onboarding.start
+    kind: api
+    method: POST
+    path: /api/runner/onboarding
+    resource: user
+    grants:
+      - { role: runner, ops: [create], scope: self, fields: [url, payoutsEnabled], reason: Stripe で報酬の受け取り口座を登録するため }
+  - id: api.runner.onboarding.sync
+    kind: api
+    method: POST
+    path: /api/runner/onboarding/sync
+    resource: user
+    grants:
+      - { role: runner, ops: [update], scope: self, fields: [payoutsEnabled], reason: 口座登録が終わったか確かめるため }
+  - id: api.runner.orders.nearby
+    kind: api
+    method: GET
+    path: /api/runner/orders/nearby
+    resource: order
+    grants:
+      - role: runner
+        ops: [read]
+        scope: nearby
+        fields: ["shops[].id", "shops[].name", "shops[].distanceKm", "shops[].perks[].title", "shops[].orders[].id", "shops[].orders[].dropoffLabel", "shops[].orders[].customerDisplayName", "shops[].orders[].items[].name", "shops[].orders[].items[].qty", "shops[].orders[].estimatedItemsJpy", "shops[].orders[].distanceKm", "shops[].orders[].expiresAt", limits.advanceLimitJpy, limits.maxOrdersPerRun, payoutsEnabled]
+        reason: 引き受ける注文を選ぶため（お客さんは表示名・受け渡し場所・注文内容のみ）
+  - id: api.runner.runs.preview
+    kind: api
+    method: POST
+    path: /api/runner/runs/preview
+    resource: order
+    grants:
+      - { role: runner, ops: [read], scope: nearby, fields: [rewardJpy, breakdown, advanceJpy, isRain, isEarly, distanceKm], reason: 引き受ける前に報酬を確かめるため }
+  - id: api.runner.runs.create
+    kind: api
+    method: POST
+    path: /api/runner/runs
+    resource: order
+    grants:
+      - { role: runner, ops: [create], scope: nearby, fields: [id], reason: 複数の注文をまとめて引き受けるため（自分の注文は不可） }
+  - id: api.runner.runs.list
+    kind: api
+    method: GET
+    path: /api/runner/runs
+    resource: run
+    grants:
+      - { role: runner, ops: [read], scope: assigned, fields: [id, status, shopName, orderCount, rewardJpy, createdAt], reason: 自分のおつかいの一覧を見るため }
+  - id: api.runner.runs.show
+    kind: api
+    method: GET
+    path: /api/runner/runs/:id
+    resource: run
+    grants:
+      - role: runner
+        ops: [read]
+        scope: assigned
+        fields:
+          - id
+          - status
+          - shop.name
+          - shop.address
+          - perks[].title
+          - perks[].description
+          - rewardJpy
+          - rewardBreakdown
+          - receiptUrl
+          - canWithdraw
+          - withdrawDeadlineAt
+          - orders[].id
+          - orders[].status
+          - orders[].approvalStatus
+          - orders[].approvalReasons
+          - orders[].dropoffLabel
+          - orders[].note
+          - orders[].customer.displayName
+          - { path: "orders[].customer.phone", when: { status: [purchased] } }
+          - { path: "orders[].customer.address", when: { status: [purchased] } }
+          - orders[].items[].id
+          - orders[].items[].name
+          - orders[].items[].qty
+          - orders[].items[].unitPriceJpy
+          - orders[].items[].actualUnitPriceJpy
+          - orders[].items[].actualQty
+          - orders[].items[].outOfStock
+          - orders[].items[].substitutionName
+          - orders[].holdAmountJpy
+          - orders[].estimatedItemsJpy
+          - orders[].actualItemsJpy
+          - orders[].deliveryFeeJpy
+          - orders[].finalTotalJpy
+        reason: 買い物・配達のため。電話番号と住所は配達中（purchased）だけ表示し、完了後は見えなくする
+  - id: api.runner.runs.withdraw
+    kind: api
+    method: POST
+    path: /api/runner/runs/:id/withdraw
+    resource: run
+    grants:
+      - { role: runner, ops: [update], scope: assigned, fields: [id, status], reason: 期限内に引き受けを取り消すため }
+  - id: api.runner.runs.receipt
+    kind: api
+    method: POST
+    path: /api/runner/runs/:id/receipt
+    resource: run
+    grants:
+      - { role: runner, ops: [create], scope: assigned, fields: [id, "orders[].id", "orders[].status", "orders[].approvalStatus"], reason: レシート画像と実額を登録するため }
+  - id: api.runner.orders.deliver
+    kind: api
+    method: POST
+    path: /api/runner/orders/:id/deliver
+    resource: order
+    grants:
+      - { role: runner, ops: [update], scope: assigned, fields: [id, status], reason: 届けたことを記録するため }
+  - id: api.runner.orders.receive
+    kind: api
+    method: POST
+    path: /api/runner/orders/:id/receive
+    resource: order
+    grants:
+      - { role: runner, ops: [update], scope: assigned, fields: [id, status], reason: お客さんの受け取りコード（QR）を読み取って本決済するため }
+  - id: api.runner.orders.dispute
+    kind: api
+    method: POST
+    path: /api/runner/orders/:id/dispute
+    resource: order
+    grants:
+      - { role: runner, ops: [update], scope: assigned, fields: [id, status], reason: トラブルを運営に知らせるため }
+  - id: api.runner.earnings
+    kind: api
+    method: GET
+    path: /api/runner/earnings
+    resource: user
+    grants:
+      - role: runner
+        ops: [read]
+        scope: self
+        fields: [totals.paidJpy, totals.scheduledJpy, totals.runs, monthlyRuns, avgRating, ratingCount, "titles[]", "payouts[].id", "payouts[].amountJpy", "payouts[].status", "payouts[].scheduledAt", "payouts[].paidAt", "messages[].stars", "messages[].message", "messages[].at"]
+        reason: 自分の報酬・入金履歴・称号・ありがとうメッセージを見るため
+
+  # ============================================================
+  # パン屋（shop）
+  # ============================================================
+  - id: api.shop.products.list
+    kind: api
+    method: GET
+    path: /api/shop/products
+    resource: product
+    grants:
+      - { role: shop, ops: [read], scope: shop, fields: [id, shopId, name, priceJpy, active, sortOrder], reason: 自店の商品を管理するため }
+  - id: api.shop.products.create
+    kind: api
+    method: POST
+    path: /api/shop/products
+    resource: product
+    grants:
+      - { role: shop, ops: [create], scope: shop, fields: [id], reason: 自店の商品を登録するため }
+  - id: api.shop.products.update
+    kind: api
+    method: PATCH
+    path: /api/shop/products/:id
+    resource: product
+    grants:
+      - { role: shop, ops: [update], scope: shop, fields: [id], reason: 自店の商品・価格を変えるため }
+  - id: api.shop.perks.list
+    kind: api
+    method: GET
+    path: /api/shop/perks
+    resource: perk
+    grants:
+      - { role: shop, ops: [read], scope: shop, fields: [id, shopId, title, description, active], reason: パシリ特典を管理するため }
+  - id: api.shop.perks.create
+    kind: api
+    method: POST
+    path: /api/shop/perks
+    resource: perk
+    grants:
+      - { role: shop, ops: [create], scope: shop, fields: [id], reason: パシリ特典を追加するため }
+  - id: api.shop.perks.update
+    kind: api
+    method: PATCH
+    path: /api/shop/perks/:id
+    resource: perk
+    grants:
+      - { role: shop, ops: [update], scope: shop, fields: [id], reason: パシリ特典を変えるため }
+  - id: api.shop.stats
+    kind: api
+    method: GET
+    path: /api/shop/stats
+    resource: order
+    grants:
+      - { role: shop, ops: [read], scope: shop, fields: ["shops[].id", "shops[].name", "shops[].days[].date", "shops[].days[].orders", "shops[].days[].itemsJpy", "shops[].products[].name", "shops[].products[].qty"], reason: 自店の注文集計を見るため（個人を特定できる情報は含めない） }
+  - id: export.shop.stats_csv
+    kind: export
+    method: GET
+    path: /api/shop/stats.csv
+    resource: order
+    grants:
+      - { role: shop, ops: [read], scope: shop, fields: [店, 日付, 注文数, 商品額], reason: 自店の注文集計を CSV で書き出すため（集計のみ・個人情報なし） }
+
+  # ============================================================
+  # ファイル（file）
+  # ============================================================
+  - id: file.receipt
+    kind: file
+    method: GET
+    path: /api/files/receipts/:id
+    resource: receipt
+    grants:
+      - { role: customer, ops: [read], scope: own, reason: 自分の注文のレシートを確かめるため（期限付き URL のみ） }
+      - { role: runner, ops: [read], scope: assigned, reason: 自分が登録したレシートを確かめるため（期限付き URL のみ） }
+      - { role: admin, ops: [read], scope: all, reason: トラブル対応のため（期限付き URL のみ） }
+
+  # ============================================================
+  # 運営（admin）
+  # ============================================================
+  - id: api.admin.settings.list
+    kind: api
+    method: GET
+    path: /api/admin/settings
+    resource: setting
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: 設定値を確認するため }
+  - id: api.admin.settings.update
+    kind: api
+    method: PUT
+    path: /api/admin/settings/:key
+    resource: setting
+    require_reason: true
+    grants:
+      - { role: admin, ops: [update], scope: all, fields: ["*"], reason: 設定値を変えるため（範囲チェック・履歴保存あり） }
+  - id: api.admin.settings.override_set
+    kind: api
+    method: PUT
+    path: /api/admin/settings/:key/overrides
+    resource: setting
+    require_reason: true
+    grants:
+      - { role: admin, ops: [update], scope: all, fields: ["*"], reason: エリア別・店舗別の上書きを設定するため }
+  - id: api.admin.settings.override_delete
+    kind: api
+    method: DELETE
+    path: /api/admin/settings/:key/overrides/:overrideId
+    resource: setting
+    require_reason: true
+    grants:
+      - { role: admin, ops: [delete], scope: all, fields: ["*"], reason: 上書きをやめて全体の値に戻すため }
+  - id: api.admin.settings.history
+    kind: api
+    method: GET
+    path: /api/admin/settings/history
+    resource: setting
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: 設定値の変更履歴を見るため }
+  - id: api.admin.settings.revert
+    kind: api
+    method: POST
+    path: /api/admin/settings/history/:changeId/revert
+    resource: setting
+    require_reason: true
+    grants:
+      - { role: admin, ops: [update], scope: all, fields: ["*"], reason: 設定値を過去の値に戻すため }
+  - id: api.admin.areas
+    kind: api
+    method: GET
+    path: /api/admin/areas
+    resource: shop
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: 上書き先のエリア・店を選ぶため }
+  - id: api.admin.ledger.show
+    kind: api
+    method: GET
+    path: /api/admin/access-ledger
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: アクセス台帳を一覧で確認するため（変更はコードレビュー経由のみ） }
+  - id: api.admin.audit.search
+    kind: api
+    method: GET
+    path: /api/admin/audit
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: 通行記録を検索するため }
+  - id: api.admin.audit.verify
+    kind: api
+    method: GET
+    path: /api/admin/audit/verify
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: 通行記録・お金の台帳が改ざんされていないか確かめるため }
+  - id: api.admin.audit.anomalies
+    kind: api
+    method: GET
+    path: /api/admin/audit/anomalies
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: 短時間の大量拒否などの異常を見つけるため }
+  - id: api.admin.money.journals
+    kind: api
+    method: GET
+    path: /api/admin/money
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: お金の台帳を確認するため }
+  - id: api.admin.money.reconciliations
+    kind: api
+    method: GET
+    path: /api/admin/reconciliations
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: Stripe との照合結果を確認するため }
+  - id: export.admin.money_csv
+    kind: export
+    method: GET
+    path: /api/admin/money.csv
+    require_reason: true
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: 会計のためにお金の台帳を書き出すため（理由必須） }
+  - id: api.admin.notifications
+    kind: api
+    method: GET
+    path: /api/admin/notifications
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: ["*"], reason: 運営あての通知（照合の差異など）を見るため }
+  - id: api.admin.orders.list
+    kind: api
+    method: GET
+    path: /api/admin/orders
+    resource: order
+    grants:
+      - role: admin
+        ops: [read]
+        scope: all
+        fields: [id, status, shopName, customerId, runnerId, estimatedTotalJpy, holdAmountJpy, finalTotalJpy, approvalStatus, paymentStatus, createdAt]
+        reason: 注文の状況を把握するため（個人情報は含めない）
+  - id: api.admin.orders.show
+    kind: api
+    method: GET
+    path: /api/admin/orders/:id
+    resource: order
+    grants:
+      - role: admin
+        ops: [read]
+        scope: all
+        fields: [id, status, shopName, customerId, runnerId, "items[].name", "items[].qty", "items[].unitPriceJpy", "items[].actualUnitPriceJpy", "items[].actualQty", "items[].outOfStock", "items[].substitutionName", estimatedTotalJpy, holdAmountJpy, actualItemsJpy, deliveryFeeJpy, platformFeeJpy, finalTotalJpy, approvalStatus, approvalReasons, settingsSnapshot, "transitions[].from", "transitions[].to", "transitions[].actorRole", "transitions[].actorId", "transitions[].reason", "transitions[].at", "payments[].id", "payments[].status", "payments[].amountAuthorizedJpy", "payments[].amountCapturedJpy", payout.status, payout.amountJpy, receiptUrl, "disputes[].id", "disputes[].reason", "disputes[].status"]
+        reason: トラブル対応のため（個人情報は含めない）
+  - id: api.admin.users.pii
+    kind: api
+    method: GET
+    path: /api/admin/users/:id/pii
+    resource: user
+    require_reason: true
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: [id, email, displayName, phone, address], reason: トラブル対応で連絡するため（理由必須・記録あり） }
+  - id: api.admin.disputes.list
+    kind: api
+    method: GET
+    path: /api/admin/disputes
+    resource: dispute
+    grants:
+      - { role: admin, ops: [read], scope: all, fields: [id, orderId, status, reason, openedByRole, fromStatus, createdAt, resolution, resolvedAt], reason: トラブル申告の一覧 }
+  - id: api.admin.disputes.resolve
+    kind: api
+    method: POST
+    path: /api/admin/disputes/:id/resolve
+    resource: dispute
+    require_reason: true
+    grants:
+      - { role: admin, ops: [update], scope: all, fields: [id, status, orderStatus], reason: トラブルを解決し、本決済または仮押さえの解放を行うため }
+  - id: api.admin.orders.refund
+    kind: api
+    method: POST
+    path: /api/admin/orders/:id/refund
+    resource: order
+    require_reason: true
+    grants:
+      - { role: admin, ops: [update], scope: all, fields: [id, refundedJpy], reason: パシリへの送金前に限り返金するため }
+  - id: api.admin.jobs.run
+    kind: api
+    method: POST
+    path: /api/admin/jobs/:name/run
+    grants:
+      - { role: admin, ops: [create], scope: all, fields: ["*"], reason: 動作確認やトラブル時に定期処理をすぐ実行するため }
+
+  # ============================================================
+  # 定期処理（job）— system ロールのみ。HTTP からは呼べない
+  # ============================================================
+  - id: job.expire_orders
+    kind: job
+    grants:
+      - { role: system, ops: [update], scope: all, reason: 誰も引き受けない注文を期限切れにして仮押さえを解放するため }
+  - id: job.auto_complete
+    kind: job
+    grants:
+      - { role: system, ops: [update], scope: all, reason: 配達後に一定時間操作がない注文を自動で完了（本決済）するため }
+  - id: job.retry_captures
+    kind: job
+    grants:
+      - { role: system, ops: [update], scope: all, reason: 途中で止まった本決済を同じ冪等キーでやり直すため }
+  - id: job.payouts
+    kind: job
+    grants:
+      - { role: system, ops: [create], scope: all, reason: 設定されたタイミングでパシリへ送金するため }
+  - id: job.reconcile
+    kind: job
+    grants:
+      - { role: system, ops: [read], scope: all, reason: お金の台帳と Stripe の記録を突き合わせるため }

@@ -1,0 +1,482 @@
+// データモデル。説明は docs/design.md の「2. データモデル」を参照。
+// 金額はすべて円の整数（Int）。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  customer
+  runner
+  shop
+  admin
+}
+
+enum OrderStatus {
+  draft
+  placed
+  matched
+  purchased
+  delivered
+  completed
+  cancelled
+  disputed
+  expired
+}
+
+enum ApprovalStatus {
+  none
+  pending
+  approved
+  rejected
+}
+
+enum RunStatus {
+  shopping
+  delivering
+  done
+  withdrawn
+}
+
+enum PaymentStatus {
+  requires_confirmation
+  authorized
+  capture_pending
+  captured
+  released
+  failed
+  refunded
+}
+
+enum PayoutStatus {
+  scheduled
+  paid
+  failed
+  cancelled
+}
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  passwordHash     String
+  displayName      String
+  phone            String?
+  address          String?
+  lat              Float?
+  lng              Float?
+  emailVerifiedAt  DateTime?
+  disabledAt       DateTime?
+  stripeCustomerId String?
+  stripeAccountId  String?
+  payoutsEnabled   Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+
+  roles          UserRole[]
+  sessions       Session[]
+  shopMembers    ShopMember[]
+  orders         Order[]           @relation("CustomerOrders")
+  runs           Run[]
+  verifications  EmailVerification[]
+  payouts        Payout[]
+  ratingsGiven   Rating[]          @relation("RatingCustomer")
+  ratingsGot     Rating[]          @relation("RatingRunner")
+}
+
+model UserRole {
+  userId    String
+  role      Role
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, role])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  ip        String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LoginAttempt {
+  id      String   @id @default(cuid())
+  email   String
+  ip      String?
+  success Boolean
+  at      DateTime @default(now())
+
+  @@index([email, at])
+  @@index([ip, at])
+}
+
+model EmailVerification {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Area {
+  id    String @id @default(cuid())
+  name  String
+  shops Shop[]
+}
+
+model Shop {
+  id        String  @id @default(cuid())
+  areaId    String
+  name      String
+  address   String
+  lat       Float
+  lng       Float
+  active    Boolean @default(true)
+  area      Area    @relation(fields: [areaId], references: [id])
+
+  members  ShopMember[]
+  products Product[]
+  perks    RunnerPerk[]
+  orders   Order[]
+  runs     Run[]
+}
+
+model ShopMember {
+  userId String
+  shopId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@id([userId, shopId])
+}
+
+model Product {
+  id        String   @id @default(cuid())
+  shopId    String
+  name      String
+  priceJpy  Int
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  updatedAt DateTime @updatedAt
+  shop      Shop     @relation(fields: [shopId], references: [id])
+}
+
+model RunnerPerk {
+  id          String  @id @default(cuid())
+  shopId      String
+  title       String
+  description String  @default("")
+  active      Boolean @default(true)
+  shop        Shop    @relation(fields: [shopId], references: [id])
+}
+
+model Setting {
+  key         String   @id
+  value       Json
+  type        String
+  unit        String
+  description String
+  min         Float?
+  max         Float?
+  options     Json?
+  pattern     String?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}
+
+model SettingOverride {
+  id          String   @id @default(cuid())
+  key         String
+  scopeType   String // area | shop
+  scopeId     String
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([key, scopeType, scopeId])
+}
+
+model SettingChange {
+  id          String   @id @default(cuid())
+  key         String
+  scopeType   String // global | area | shop
+  scopeId     String?
+  oldValue    Json?
+  newValue    Json?
+  changedById String?
+  reason      String
+  revertOfId  String?
+  createdAt   DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
+model Order {
+  id                      String         @id @default(cuid())
+  customerId              String
+  shopId                  String
+  runId                   String?
+  status                  OrderStatus    @default(draft)
+  dropoffLabel            String
+  dropoffLat              Float
+  dropoffLng              Float
+  distanceKm              Float
+  note                    String         @default("")
+  settingsSnapshot        Json
+  estimatedItemsJpy       Int
+  estimatedDeliveryFeeJpy Int
+  estimatedPlatformFeeJpy Int
+  estimatedTotalJpy       Int
+  holdAmountJpy           Int
+  actualItemsJpy          Int?
+  deliveryFeeJpy          Int?
+  platformFeeJpy          Int?
+  finalTotalJpy           Int?
+  approvalStatus          ApprovalStatus @default(none)
+  approvalReasons         Json?
+  receiveCode             String?
+  receiveCodeAttempts     Int            @default(0)
+  matchedAt               DateTime?
+  purchasedAt             DateTime?
+  deliveredAt             DateTime?
+  completedAt             DateTime?
+  cancelledAt             DateTime?
+  expiresAt               DateTime
+  createdAt               DateTime       @default(now())
+
+  customer    User              @relation("CustomerOrders", fields: [customerId], references: [id])
+  shop        Shop              @relation(fields: [shopId], references: [id])
+  run         Run?              @relation(fields: [runId], references: [id])
+  items       OrderItem[]
+  transitions OrderTransition[]
+  payments    Payment[]
+  payout      Payout?
+  rating      Rating?
+  disputes    Dispute[]
+
+  @@index([status, shopId])
+  @@index([customerId])
+}
+
+model OrderItem {
+  id                 String  @id @default(cuid())
+  orderId            String
+  productId          String
+  name               String
+  unitPriceJpy       Int
+  qty                Int
+  actualUnitPriceJpy Int?
+  actualQty          Int?
+  outOfStock         Boolean @default(false)
+  substitutionName   String?
+  order              Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model OrderTransition {
+  id        String      @id @default(cuid())
+  orderId   String
+  from      OrderStatus
+  to        OrderStatus
+  actorId   String?
+  actorRole String
+  reason    String      @default("")
+  at        DateTime    @default(now())
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, at])
+}
+
+model Run {
+  id              String    @id @default(cuid())
+  runnerId        String
+  shopId          String
+  status          RunStatus @default(shopping)
+  rewardJpy       Int
+  rewardBreakdown Json
+  isRain          Boolean
+  isEarly         Boolean
+  distanceKm      Float
+  createdAt       DateTime  @default(now())
+  runner          User      @relation(fields: [runnerId], references: [id])
+  shop            Shop      @relation(fields: [shopId], references: [id])
+  orders          Order[]
+  receipts        Receipt[]
+}
+
+model Receipt {
+  id           String   @id @default(cuid())
+  runId        String
+  storageKey   String   @unique
+  mime         String
+  size         Int
+  sha256       String
+  uploadedById String
+  createdAt    DateTime @default(now())
+  run          Run      @relation(fields: [runId], references: [id])
+}
+
+model Payment {
+  id                  String        @id @default(cuid())
+  orderId             String
+  provider            String // stripe | mock
+  kind                String        @default("primary") // primary | reauth（金額が仮押さえを超えたときの与信やり直し）
+  intentId            String        @unique
+  chargeId            String?
+  amountAuthorizedJpy Int
+  amountCapturedJpy   Int           @default(0)
+  amountRefundedJpy   Int           @default(0)
+  status              PaymentStatus @default(requires_confirmation)
+  active              Boolean       @default(true)
+  // 本決済を始めた人（途中で止まったとき、やり直しの記録に使う）
+  captureActorId      String?
+  captureActorRole    String?
+  captureReason       String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  order               Order         @relation(fields: [orderId], references: [id])
+
+  @@index([orderId, active])
+}
+
+model Payout {
+  id          String       @id @default(cuid())
+  orderId     String       @unique
+  runnerId    String
+  amountJpy   Int
+  status      PayoutStatus @default(scheduled)
+  scheduledAt DateTime
+  transferId  String?
+  paidAt      DateTime?
+  createdAt   DateTime     @default(now())
+  order       Order        @relation(fields: [orderId], references: [id])
+  runner      User         @relation(fields: [runnerId], references: [id])
+
+  @@index([status, scheduledAt])
+}
+
+model Rating {
+  orderId    String   @id
+  customerId String
+  runnerId   String
+  stars      Int
+  message    String   @default("")
+  createdAt  DateTime @default(now())
+  order      Order    @relation(fields: [orderId], references: [id])
+  customer   User     @relation("RatingCustomer", fields: [customerId], references: [id])
+  runner     User     @relation("RatingRunner", fields: [runnerId], references: [id])
+}
+
+model Dispute {
+  id           String      @id @default(cuid())
+  orderId      String
+  openedById   String
+  openedByRole String
+  fromStatus   OrderStatus
+  reason       String
+  status       String      @default("open") // open | resolved
+  resolution   String?
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime    @default(now())
+  order        Order       @relation(fields: [orderId], references: [id])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  audience  String // admin
+  kind      String
+  message   String
+  detail    Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// 通行記録台帳：追記専用（DB トリガーで UPDATE/DELETE を禁止）
+model AuditLedger {
+  seq       BigInt   @id @default(autoincrement())
+  at        DateTime @default(now())
+  userId    String?
+  role      String
+  entrance  String
+  operation String
+  target    String?
+  result    String // allow | deny | error | info
+  ip        String?
+  detail    Json?
+  prevHash  String
+  hash      String   @unique
+
+  @@index([at])
+  @@index([userId, at])
+  @@index([result, at])
+  @@index([entrance, at])
+}
+
+// お金の台帳：1イベント＝1仕訳。追記専用
+model MoneyJournal {
+  seq            BigInt      @id @default(autoincrement())
+  id             String      @unique @default(cuid())
+  eventType      String // hold | release | capture | fee | payout | refund
+  orderId        String?
+  paymentId      String?
+  payoutId       String?
+  stripeRef      String?
+  amountJpy      Int
+  idempotencyKey String      @unique
+  memo           String      @default("")
+  createdAt      DateTime    @default(now())
+  lines          MoneyLine[]
+
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model MoneyLine {
+  id        String       @id @default(cuid())
+  journalId String
+  account   String
+  debitJpy  Int          @default(0)
+  creditJpy Int          @default(0)
+  journal   MoneyJournal @relation(fields: [journalId], references: [id])
+
+  @@index([account])
+}
+
+model ReconciliationRun {
+  id        String   @id @default(cuid())
+  at        DateTime @default(now())
+  status    String // ok | mismatch
+  checked   Int
+  details   Json
+}
+
+model IdempotencyRecord {
+  key       String   @id
+  scope     String
+  response  Json?
+  createdAt DateTime @default(now())
+}
+
+model WebhookEvent {
+  id          String    @id
+  type        String
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+}
+
+// モック決済（PAYMENT_MODE=mock）専用：偽物の Stripe が持つ記録。本物の Stripe 側の記録の代わり
+model MockStripeObject {
+  id        String   @id
+  type      String // payment_intent | transfer | account | refund | idem
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,55 @@
+# 起動: docker compose up --build
+# 止める: Ctrl + C（データは残ります）  / 全部消す: docker compose down -v
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pashiri
+      POSTGRES_PASSWORD: pashiri
+      POSTGRES_DB: pashiri
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pashiri -d pashiri"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://pashiri:pashiri@db:5432/pashiri?schema=public
+      STORAGE_DIR: /app/storage
+    ports:
+      - "3000:3000"
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts && npx next start -p 3000"
+
+  worker:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://pashiri:pashiri@db:5432/pashiri?schema=public
+      STORAGE_DIR: /app/storage
+    volumes:
+      - storage:/app/storage
+    depends_on:
+      app:
+        condition: service_started
+    command: sh -c "sleep 15 && npx tsx src/worker.ts"
+
+volumes:
+  dbdata:
+  storage:
