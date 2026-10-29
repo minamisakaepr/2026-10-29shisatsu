@@ -6,3 +6,4 @@ process.env.PAYMENT_MODE = "mock";
 process.env.STRIPE_SECRET_KEY = "";
 process.env.STRIPE_PUBLISHABLE_KEY = "";
 process.env.STORAGE_DIR = "./storage-test";
+process.env.SEED_TEST_DATA = "true";

@@ -1,12 +1,14 @@
-// テスト用データの投入（何回実行しても同じ状態になる）
-//  ・設定値の初期値（config/settings.default.yaml）
-//  ・エリア / 店 / 商品 / パシリ特典
-//  ・各ロールのテストユーザー（パスワードは下の TEST_PASSWORD。本番では使わないこと）
+// 初期データの投入（何回実行しても同じ状態になる）
+//  ・設定値の初期値（config/settings.default.yaml）… いつも入れる
+//  ・テスト用データ … SEED_TEST_DATA=true で、しかも自分の PC（localhost）で動かすときだけ入れる
+//      エリア / 店 / 商品 / パシリ特典
+//      各ロールのテストユーザー（パスワードは下の TEST_PASSWORD。公開されているので本番では絶対に使わない）
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { PrismaClient, type Role } from "@prisma/client";
 import { seedDefaults } from "../src/server/settings/service";
 import { gateway } from "../src/server/payments";
+import { testDataAllowed } from "../src/server/lib/seedGuard";
 
 const prisma = new PrismaClient();
 
@@ -42,6 +44,10 @@ const USERS: { email: string; name: string; roles: Role[]; lat: number; lng: num
 
 async function main() {
   await seedDefaults(prisma);
+  if (!testDataAllowed()) {
+    console.log("設定値の初期値を入れました（テスト用データは入れていません。入れるときは SEED_TEST_DATA=true）");
+    return;
+  }
   await prisma.area.upsert({ where: { id: AREA.id }, create: AREA, update: { name: AREA.name } });
   for (const s of SHOPS) {
     await prisma.shop.upsert({

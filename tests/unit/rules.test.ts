@@ -7,6 +7,7 @@ import { validateTitleRules, validateValue } from "@/server/settings/definitions
 import { isBalanced, linesFor } from "@/server/money/ledger";
 import { scrub, chainHash, rowPayload } from "@/server/gate/audit";
 import { detectImage } from "@/server/lib/storage";
+import { testDataAllowed } from "@/server/lib/seedGuard";
 
 describe("状態遷移", () => {
   it("表にある遷移だけ許可", () => {
@@ -105,5 +106,22 @@ describe("その他", () => {
     expect(detectImage(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))?.mime).toBe("image/jpeg");
     expect(detectImage(Buffer.from("<html><script>alert(1)</script>"))).toBeNull();
     expect(detectImage(Buffer.from("RIFF0000WAVE"))).toBeNull();
+  });
+});
+
+describe("テスト用データの投入（公開パスワードのユーザーを公開環境に入れない）", () => {
+  const local = { SEED_TEST_DATA: "true", APP_URL: "http://localhost:3000" };
+  it("明示したときだけ、自分の PC でだけ入れる", () => {
+    expect(testDataAllowed(local)).toBe(true);
+    expect(testDataAllowed({ APP_URL: "http://localhost:3000" })).toBe(false);
+    expect(testDataAllowed({ ...local, SEED_TEST_DATA: "false" })).toBe(false);
+    expect(testDataAllowed({ ...local, SEED_TEST_DATA: "1" })).toBe(false);
+    expect(testDataAllowed({ ...local, APP_URL: "http://127.0.0.1:3000" })).toBe(true);
+  });
+  it("公開する URL や本番キーなら、エラーで止める", () => {
+    expect(() => testDataAllowed({ ...local, APP_URL: "https://pashiri.example.com" })).toThrow(/APP_URL/);
+    expect(() => testDataAllowed({ ...local, APP_URL: "https://localhost.example.com" })).toThrow(/APP_URL/);
+    expect(() => testDataAllowed({ ...local, STRIPE_SECRET_KEY: "sk_live_xxx" })).toThrow(/本番キー/);
+    expect(() => testDataAllowed({ ...local, STRIPE_PUBLISHABLE_KEY: "pk_live_xxx" })).toThrow(/本番キー/);
   });
 });
